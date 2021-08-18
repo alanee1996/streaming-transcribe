@@ -5,7 +5,6 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
@@ -16,72 +15,48 @@ import javax.sound.sampled.*;
 import java.io.*;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
 
-public class TranscribeStreamingDemoApp {
+import static javax.sound.sampled.AudioFormat.Encoding.PCM_SIGNED;
+import static javax.sound.sampled.AudioFormat.Encoding.PCM_UNSIGNED;
 
+public class TranscribeStreamingDemoFile {
     private static final Region REGION = Region.US_EAST_1;
     private static TranscribeStreamingAsyncClient client;
     private static final String ACCESSKEYID = "";
     private static final String SECRET_ACCESSKEY = "";
     private static StartStreamTranscriptionResponseHandler responseHandler = getResponseHandler();
-    private static AudioStreamPublisher publisher;
 
-    public static void main(String args[]) throws URISyntaxException, ExecutionException, InterruptedException, LineUnavailableException {
-        try {
-            client = TranscribeStreamingAsyncClient.builder()
-                    .credentialsProvider(getCredentials())
-                    .region(REGION)
-                    .build();
-            publisher = new AudioStreamPublisher(getStreamFromMic());
-            CompletableFuture<Void> result = client.startStreamTranscription(getRequest(16_000),
-                    publisher,
-                    responseHandler);
-            result.get();
-            client.close();
-        } catch (Exception ex) {
-            throw ex;
-        }
-    }
+    public static void main(String args[]) throws Exception {
 
-    private static void close() {
-        try {
-            if (publisher != null) {
-                publisher.inputStream.close();
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
-    }
+        String file = "/Users/alaneemac/Music/rs-test2.wav";
+        File theFile = new File(file);
+//        Clip clip;
+//        AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(theFile);
+//        clip = AudioSystem.getClip();
+//        clip.open(audioInputStream);
+//        clip.loop(Clip.LOOP_CONTINUOUSLY);
+//        clip.start();
+//
+//        while (clip.isRunning()) {
+//
+//        }
+        client = TranscribeStreamingAsyncClient.builder()
+                .credentialsProvider(getCredentials())
+                .region(REGION)
+                .build();
 
-    private static InputStream getStreamFromMic() throws LineUnavailableException {
+        CompletableFuture<Void> result = client.startStreamTranscription(getRequest(theFile),
+                new AudioStreamPublisher(getStreamFromFile(file)),
+                getResponseHandler());
 
-        // Signed PCM AudioFormat with 16kHz, 16 bit sample size, mono
-        int sampleRate = 16000;
-        AudioFormat format = new AudioFormat(sampleRate, 16, 1, true, false);
-//        AudioFormat format = new AudioFormat(AudioFormat.Encoding.PCM_SIGNED,sampleRate,16,1,5,2,false);
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-
-        if (!AudioSystem.isLineSupported(info)) {
-            System.out.println("Line not supported");
-            System.exit(0);
-        }
-
-        TargetDataLine line = (TargetDataLine) AudioSystem.getLine(info);
-        line.open(format);
-        line.start();
-
-        InputStream audioStream = new AudioInputStream(line);
-        return audioStream;
+        result.get();
+        client.close();
     }
 
     private static AwsCredentialsProvider getCredentials() {
@@ -92,13 +67,34 @@ public class TranscribeStreamingDemoApp {
 //        return DefaultCredentialsProvider.create();
     }
 
-    private static StartStreamTranscriptionRequest getRequest(Integer mediaSampleRateHertz) {
+    private static InputStream getStreamFromFile(String file) {
+        try {
+            File inputFile = new File(file);
+            InputStream audioStream = new FileInputStream(inputFile);
+            return audioStream;
+
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * IMPORTANT: You must know the media encoding and sample hertz rate for your file.  If
+     * these values are wrong, then transcribe will not return an error.  It will return an
+     * incorrect transcript.
+     */
+    private static StartStreamTranscriptionRequest getRequest(File inputFile) throws IOException, UnsupportedAudioFileException {
+        //Too bad you can't read the input stream twice.  We read the file twice in this example.
+        AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(inputFile);
+        AudioFormat audioFormat = audioInputStream.getFormat();
+        Integer t = getAwsSampleRate(audioFormat);
+
         return StartStreamTranscriptionRequest.builder()
-                .languageCode(LanguageCode.EN_US.toString())
-                .mediaEncoding(MediaEncoding.PCM)
-                .vocabularyFilterName("badwordSimple")
-                .vocabularyFilterMethod(VocabularyFilterMethod.MASK)
-                .mediaSampleRateHertz(mediaSampleRateHertz)
+                .languageCode(LanguageCode.EN_US)
+//                .showSpeakerLabel(true)
+                .mediaEncoding(getAwsMediaEncoding(audioFormat))
+                .mediaSampleRateHertz(getAwsSampleRate(audioFormat))
+//                .mediaSampleRateHertz(getAwsSampleRate(audioFormat))
                 .build();
     }
 
@@ -115,47 +111,33 @@ public class TranscribeStreamingDemoApp {
                 })
                 .onComplete(() -> {
                     System.out.println("=== All records stream successfully ===");
-                }).subscriber(event -> {
+                })
+                .subscriber(event -> {
                     List<Result> results = ((TranscriptEvent) event).transcript().results();
-                    DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
-                    LocalDateTime now = LocalDateTime.now();
+//                    System.out.println(JsonConvert.GsonSerialize(results));
+                    print(results);
+
                     if (results.size() > 0) {
-                        if (results.size() > 1) {
-                            System.out.println("--------Greater than 2 - actual = " + results.size() + "---------");
-                        }
+//                        print(results);
                         if (!results.get(0).alternatives().get(0).transcript().isEmpty()) {
-                            print(results);
-                            String transcript = results.get(0).alternatives().get(0).transcript();
-                            if (transcript.toLowerCase(Locale.ROOT).contains("complete") && responseHandler != null) {
-                                responseHandler.complete();
-                                close();
-                            }
-                            System.out.println(transcript);
+                            System.out.println(results.get(0).alternatives().get(0).transcript());
                         }
                     }
-                }).build();
-
+                })
+                .build();
     }
 
     private static void print(List<Result> results) {
         try {
             System.out.println("-----------------------------------------------------------");
 //            CompletableFuture.runAsync(() -> {
-            results.stream().forEach(result -> System.out.println(result.toString()));
+//            results.stream().forEach(result -> System.out.println(result.toString()));
+            System.out.println(JsonConvert.GsonSerialize(results));
+
 //            });
             System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
         } catch (Exception ex) {
             ex.printStackTrace();
-        }
-    }
-
-    private InputStream getStreamFromFile(String audioFileName) {
-        try {
-            File inputFile = new File(getClass().getClassLoader().getResource(audioFileName).getFile());
-            InputStream audioStream = new FileInputStream(inputFile);
-            return audioStream;
-        } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
         }
     }
 
@@ -249,5 +231,26 @@ public class TranscribeStreamingDemoApp {
                     .audioChunk(SdkBytes.fromByteBuffer(bb))
                     .build();
         }
+    }
+
+    private static MediaEncoding getAwsMediaEncoding(AudioFormat audioFormat) {
+        final String javaMediaEncoding = audioFormat.getEncoding().toString();
+
+        //TODO: Add support for MediaEncoding.OGG_OPUS and MediaEncoding.FLAC.
+        if (PCM_SIGNED.toString().equals(javaMediaEncoding)) {
+            return MediaEncoding.PCM;
+        } else if (PCM_UNSIGNED.toString().equals(javaMediaEncoding)) {
+            return MediaEncoding.PCM;
+        } /*else if (ALAW.toString().equals(javaMediaEncoding)){
+                return MediaEncoding.OGG_OPUS;
+            } else if (ULAW.toString().equals(javaMediaEncoding)){
+                return MediaEncoding.FLAC;
+            }*/
+
+        throw new IllegalArgumentException("Not a recognized media encoding:" + javaMediaEncoding);
+    }
+
+    private static Integer getAwsSampleRate(AudioFormat audioFormat) {
+        return Math.round(audioFormat.getSampleRate());
     }
 }
