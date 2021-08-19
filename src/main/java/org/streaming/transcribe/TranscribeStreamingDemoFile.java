@@ -15,6 +15,7 @@ import javax.sound.sampled.*;
 import java.io.*;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -28,8 +29,6 @@ import static javax.sound.sampled.AudioFormat.Encoding.PCM_UNSIGNED;
 public class TranscribeStreamingDemoFile {
     private static final Region REGION = Region.US_EAST_1;
     private static TranscribeStreamingAsyncClient client;
-    private static final String ACCESSKEYID = "";
-    private static final String SECRET_ACCESSKEY = "";
     private static StartStreamTranscriptionResponseHandler responseHandler = getResponseHandler();
 
     public static void main(String args[]) throws Exception {
@@ -59,10 +58,21 @@ public class TranscribeStreamingDemoFile {
         client.close();
     }
 
+//    private static void test() {
+//    try{
+//        String file = "/Users/alaneemac/Music/rs-test2.wav";
+//        File theFile = new File(file);
+//        SequenceInputStream sequenceInputStream = new SequenceInputStream();
+//    }
+//    catch (Exception ex) {
+//        ex.printStackTrace();
+//    }
+//    }
+
     private static AwsCredentialsProvider getCredentials() {
         AwsBasicCredentials awsCreds = AwsBasicCredentials.create(
-                ACCESSKEYID,
-                SECRET_ACCESSKEY);
+                Settings.ACCESSKEYID,
+                Settings.SECRET_ACCESSKEY);
         return StaticCredentialsProvider.create(awsCreds);
 //        return DefaultCredentialsProvider.create();
     }
@@ -93,8 +103,8 @@ public class TranscribeStreamingDemoFile {
                 .languageCode(LanguageCode.EN_US)
 //                .showSpeakerLabel(true)
                 .mediaEncoding(getAwsMediaEncoding(audioFormat))
+//                .mediaSampleRateHertz(90000)
                 .mediaSampleRateHertz(getAwsSampleRate(audioFormat))
-//                .mediaSampleRateHertz(getAwsSampleRate(audioFormat))
                 .build();
     }
 

@@ -31,8 +31,6 @@ public class TranscribeStreamingDemoApp {
 
     private static final Region REGION = Region.US_EAST_1;
     private static TranscribeStreamingAsyncClient client;
-    private static final String ACCESSKEYID = "";
-    private static final String SECRET_ACCESSKEY = "";
     private static StartStreamTranscriptionResponseHandler responseHandler = getResponseHandler();
     private static AudioStreamPublisher publisher;
 
@@ -86,8 +84,8 @@ public class TranscribeStreamingDemoApp {
 
     private static AwsCredentialsProvider getCredentials() {
         AwsBasicCredentials awsCreds = AwsBasicCredentials.create(
-                ACCESSKEYID,
-                SECRET_ACCESSKEY);
+                Settings.ACCESSKEYID,
+                Settings.SECRET_ACCESSKEY);
         return StaticCredentialsProvider.create(awsCreds);
 //        return DefaultCredentialsProvider.create();
     }
